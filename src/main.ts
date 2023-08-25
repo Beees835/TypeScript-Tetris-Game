@@ -18,9 +18,10 @@
 // =======================
 import "./style.css";
 
-import { fromEvent, interval, merge } from "rxjs";
+import { fromEvent, interval, merge, takeUntil } from "rxjs";
 import { map, filter, scan } from "rxjs/operators";
 import { BehaviorSubject } from 'rxjs';
+import { Subject } from 'rxjs';
 
 
 
@@ -44,7 +45,6 @@ const Block = {
   WIDTH: Viewport.CANVAS_WIDTH / Constants.GRID_WIDTH,
   HEIGHT: Viewport.CANVAS_HEIGHT / Constants.GRID_HEIGHT,
 };
-
 
 /**
  * Updates the state by proceeding with one time step.
@@ -105,6 +105,15 @@ const SHAPES: Record<string, BlockShape[]> = {
   L: [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]],
 };
 
+const TETROMINO_COLORS = {
+  I: 'cyan',
+  O: 'yellow',
+  T: 'purple',
+  S: 'green',
+  Z: 'red',
+  J: 'blue',
+  L: 'orange'
+};
 
 const currentTetromino: Tetromino = {
   shape: SHAPES.I[0], // Starting with the I shape as an example
@@ -112,9 +121,13 @@ const currentTetromino: Tetromino = {
   color: 'cyan',
 };
 
-// Initialize the game board as a 2D array filled with zeros
-const board: number[][] = Array.from({ length: Constants.GRID_HEIGHT }, () => Array(Constants.GRID_WIDTH).fill(0));
+const BOARD_WIDTH = 10;
+const BOARD_HEIGHT = 20;
 
+const initialBoard: number[][] = Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0));
+const board$ = new BehaviorSubject<number[][]>(initialBoard);
+
+const gameEnd$ = new Subject<void>();
 
 // =======================
 //  Types
@@ -204,31 +217,94 @@ const handleUserInput = (keyCode: string, tetromino: Tetromino): Tetromino => {
   switch (keyCode) {
     case "KeyA": // Move Left
       const leftTetromino = moveLeft(tetromino);
-      return isValidMove(leftTetromino, board) ? leftTetromino : tetromino;
+      return isValidMove(leftTetromino, board$.value) ? leftTetromino : tetromino;
+
     case "KeyD": // Move Right
       const rightTetromino = moveRight(tetromino);
-      return isValidMove(rightTetromino, board) ? rightTetromino : tetromino;
+      return isValidMove(rightTetromino, board$.value) ? rightTetromino : tetromino;
+
     case "KeyS": // Move Down
       const downTetromino = moveDown(tetromino);
-      return isValidMove(downTetromino, board) ? downTetromino : tetromino;
+      return isValidMove(downTetromino, board$.value) ? downTetromino : tetromino;
+
+    case "KeyW": // Rotate
+      const rotatedTetromino = rotateTetromino(tetromino);
+      return isValidMove(rotatedTetromino, board$.value) ? rotatedTetromino : tetromino;
+
     default:
       return tetromino;
   }
 };
 
+
+const addTetrominoToBoard = (tetromino: Tetromino, board: number[][]): number[][] => {
+  const newBoard = board.map(row => row.slice()); // Create a copy of the board
+  tetromino.shape.forEach((row, y) => {
+    row.forEach((cell, x) => {
+      if (cell) {
+        newBoard[tetromino.position.y + y][tetromino.position.x + x] = 1;
+      }
+    });
+  });
+  return newBoard;
+};
+
 const getRandomTetromino = (): Tetromino => {
   const tetrominoKeys = Object.keys(SHAPES);
-  const randomKey = tetrominoKeys[Math.floor(Math.random() * tetrominoKeys.length)];
+  //By using as keyof typeof TETROMINO_COLORS, 
+  // we're telling TypeScript that randomKey is specifically one of the keys of the TETROMINO_COLORS object, which should resolve the error.
+  const randomKey = tetrominoKeys[Math.floor(Math.random() * tetrominoKeys.length)] as keyof typeof TETROMINO_COLORS;
   const randomRotation = SHAPES[randomKey][Math.floor(Math.random() * SHAPES[randomKey].length)];
 
   return {
     shape: randomRotation,
     position: { x: Math.floor(Constants.GRID_WIDTH / 2) - 1, y: 0 },
-    color: 'cyan',
+    color: TETROMINO_COLORS[randomKey],
+  };
+};
+
+
+const rotateTetromino = (tetromino: Tetromino): Tetromino => {
+  const newShape = tetromino.shape[0].map((_, index) =>
+    tetromino.shape.map(row => row[index])
+  ).reverse();
+
+  return {
+    ...tetromino,
+    shape: newShape
   };
 };
 
 const tetromino$ = new BehaviorSubject<Tetromino>(getRandomTetromino());
+
+// =======================
+// Rendering Functions
+// =======================
+
+/**
+ * Renders the tetromino on the game board.
+ * @param tetromino The current tetromino to render.
+ */
+const renderTetromino = (tetromino: Tetromino, svg: SVGGraphicsElement & HTMLElement) => {
+  // Clear previous tetromino rendering
+  svg.innerHTML = '';
+
+  // Render the tetromino on the board
+  tetromino.shape.forEach((row, y) => {
+    row.forEach((cell, x) => {
+      if (cell) {
+        const cube = createSvgElement(svg.namespaceURI, "rect", {
+          height: `${Block.HEIGHT}`,
+          width: `${Block.WIDTH}`,
+          x: `${(tetromino.position.x + x) * Block.WIDTH}`,
+          y: `${(tetromino.position.y + y) * Block.HEIGHT}`,
+          style: `fill: ${tetromino.color}`,
+        });
+        svg.appendChild(cube);
+      }
+    });
+  });
+};
 
 // =======================
 // Game Loop 
@@ -274,6 +350,9 @@ export function main() {
   /** Determines the rate of time steps */
   const tick$ = interval(Constants.TICK_RATE_MS);
 
+  const newBoard = addTetrominoToBoard(currentTetromino, board$.value);
+  board$.next(newBoard);
+
   /**
    * Renders the current state to the canvas.
    *
@@ -282,76 +361,56 @@ export function main() {
    * @param s Current state
    */
   const render = (s: State) => {
-    const render = (tetromino: Tetromino) => {
-      // Clear previous tetromino rendering
-      svg.innerHTML = '';
-  
-      // Render the tetromino on the board
-      tetromino.shape.forEach((row, y) => {
-        row.forEach((cell, x) => {
-          if (cell) {
-            const cube = createSvgElement(svg.namespaceURI, "rect", {
-              height: `${Block.HEIGHT}`,
-              width: `${Block.WIDTH}`,
-              x: `${(tetromino.position.x + x) * Block.WIDTH}`,
-              y: `${(tetromino.position.y + y) * Block.HEIGHT}`,
-              style: `fill: ${tetromino.color}`,
-            });
-            svg.appendChild(cube);
-          }
-        });
-      });
+    renderTetromino(tetromino$.value, svg);
+
+    if (s.gameEnd) {
+      show(gameover);
+    } else {
+      hide(gameover);
+    }
   };
 
-  // Handle game progression
-  tick$.subscribe(() => {
+  tick$.pipe(
+    takeUntil(gameEnd$)
+  ).subscribe(() => {
     const currentTetromino = tetromino$.value;
     const movedTetromino = moveDown(currentTetromino);
-    if (isValidMove(movedTetromino, board)) {
+  
+    if (isValidMove(movedTetromino, board$.value)) {
       tetromino$.next(movedTetromino);
     } else {
-      // Handle collision and generate a new tetromino
-      tetromino$.next(getRandomTetromino());
+      // Add the current tetromino to the board
+      const updatedBoard = addTetrominoToBoard(currentTetromino, board$.value);
+      board$.next(updatedBoard);
+  
+      // Generate a new tetromino
+      const newTetromino = getRandomTetromino();
+  
+      // Check for game over
+      if (!isValidMove(newTetromino, board$.value)) {
+        gameEnd$.next();
+      } else {
+        tetromino$.next(newTetromino);
+      }
     }
-    render(tetromino$.value);
+  
+    render({ gameEnd: false });
   });
-
-  // Handle user input
+  
+  
   key$.subscribe(event => {
     const currentTetromino = tetromino$.value;
-    let newTetromino: Tetromino;
-    switch (event.code) {
-      case "KeyA":
-        newTetromino = moveLeft(currentTetromino);
-        break;
-      case "KeyD":
-        newTetromino = moveRight(currentTetromino);
-        break;
-      case "KeyS":
-        newTetromino = moveDown(currentTetromino);
-        break;
-      default:
-        newTetromino = currentTetromino;
-    }
-    if (isValidMove(newTetromino, board)) {
-      tetromino$.next(newTetromino);
-    }
-    render(tetromino$.value);
+    const newTetromino = handleUserInput(event.code, currentTetromino);
+    tetromino$.next(newTetromino);
+    render({ gameEnd: false });
   });
-}
-
+  
   const source$ = merge(tick$)
     .pipe(scan((s: State) => ({ gameEnd: true }), initialState))
     .subscribe((s: State) => {
       render(s);
-
-      if (s.gameEnd) {
-        show(gameover);
-      } else {
-        hide(gameover);
-      }
     });
-}
+  }
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
 if (typeof window !== "undefined") {
