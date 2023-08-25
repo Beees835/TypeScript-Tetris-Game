@@ -1,11 +1,16 @@
 // util.ts
 
-import { Tetromino } from './types';
+import { Tetromino } from './main';
 
 const TETROMINOES: Tetromino[] = [/* ... */];
 
-function randomTetromino(): Tetromino {
-  return TETROMINOES[Math.floor(Math.random() * TETROMINOES.length)];
+function getRandomTetromino(): Tetromino {
+  const randomIndex = Math.floor(Math.random() * TETROMINOES.length);
+  return TETROMINOES[randomIndex];
 }
 
-export { randomTetromino };
+
+
+
+
+export { getRandomTetromino };

@@ -13,18 +13,17 @@
  */
 
 
-// Make a block class -- Positioning and colouring 
-
-// Tetromino -- tetris pieces contains arrays of blocks -- the blocks have relative positions to the piece. 
-
-// Game restart 
-
-
-
+// =======================
+//  constants & Imports
+// =======================
 import "./style.css";
 
 import { fromEvent, interval, merge } from "rxjs";
 import { map, filter, scan } from "rxjs/operators";
+import { BehaviorSubject } from 'rxjs';
+
+
+
 
 /** Constants */
 
@@ -46,23 +45,6 @@ const Block = {
   HEIGHT: Viewport.CANVAS_HEIGHT / Constants.GRID_HEIGHT,
 };
 
-/** User input */
-
-type Key = "KeyS" | "KeyA" | "KeyD";
-
-type Event = "keydown" | "keyup" | "keypress";
-
-/** Utility functions */
-
-/** State processing */
-
-type State = Readonly<{
-  gameEnd: boolean;
-}>;
-
-const initialState: State = {
-  gameEnd: false,
-} as const;
 
 /**
  * Updates the state by proceeding with one time step.
@@ -110,6 +92,147 @@ const createSvgElement = (
   Object.entries(props).forEach(([k, v]) => elem.setAttribute(k, v));
   return elem;
 };
+
+type BlockShape = ReadonlyArray<ReadonlyArray<number>>;
+
+const SHAPES: Record<string, BlockShape[]> = {
+  I: [[[1, 1, 1, 1]], [[1], [1], [1], [1]]],
+  O: [[[1, 1], [1, 1]]],
+  T: [[[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[1, 1, 1], [0, 1, 0]], [[0, 1], [1, 1], [0, 1]]],
+  S: [[[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]]],
+  Z: [[[1, 1, 0], [0, 1, 1]], [[0, 1], [1, 1], [1, 0]]],
+  J: [[[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [0, 0, 1]], [[0, 1], [0, 1], [1, 1]]],
+  L: [[[0, 0, 1], [1, 1, 1]], [[1, 0], [1, 0], [1, 1]], [[1, 1, 1], [1, 0, 0]], [[1, 1], [0, 1], [0, 1]]],
+};
+
+
+const currentTetromino: Tetromino = {
+  shape: SHAPES.I[0], // Starting with the I shape as an example
+  position: { x: Math.floor(Constants.GRID_WIDTH / 2) - 1, y: 0 }, // Start at the top center of the board
+  color: 'cyan',
+};
+
+// Initialize the game board as a 2D array filled with zeros
+const board: number[][] = Array.from({ length: Constants.GRID_HEIGHT }, () => Array(Constants.GRID_WIDTH).fill(0));
+
+
+// =======================
+//  Types
+// =======================
+
+type Tetromino = {
+  shape: BlockShape,
+  position: { x: number, y: number },
+  color: string,
+};
+
+type Key = "KeyS" | "KeyA" | "KeyD";
+
+type Event = "keydown" | "keyup" | "keypress";
+
+type State = Readonly<{
+  gameEnd: boolean;
+}>;
+
+const initialState: State = {
+  gameEnd: false,
+} as const;
+
+// =======================
+//  Movements
+// =======================
+
+
+// Updating y position when we want move down movement to be done 
+const moveDown = (tetromino: Tetromino): Tetromino => {
+  return {
+    ...tetromino,
+    position: {
+      ...tetromino.position,
+      y: tetromino.position.y + 1,
+    },
+  };
+};
+
+// Smae logic update the block's x position for both move left and right 
+const moveLeft = (tetromino: Tetromino): Tetromino => {
+  return {
+    ...tetromino,
+    position: {
+      ...tetromino.position,
+      x: tetromino.position.x - 1,
+    },
+  };
+};
+
+const moveRight = (tetromino: Tetromino): Tetromino => {
+  return {
+    ...tetromino,
+    position: {
+      ...tetromino.position,
+      x: tetromino.position.x + 1,
+    },
+  };
+};
+
+
+// =======================
+//  Functions 
+// =======================
+
+const isValidMove = (tetromino: Tetromino, board: number[][]): boolean => {
+  return !tetromino.shape.some((row, y) => 
+    row.some((cell, x) => {
+      const boardX = tetromino.position.x + x;
+      const boardY = tetromino.position.y + y;
+
+      // Check if the cell is outside the game board
+      const isOutside = 
+        boardX < 0 || 
+        boardX >= Constants.GRID_WIDTH || 
+        boardY >= Constants.GRID_HEIGHT;
+
+      // Check if the cell overlaps with another block
+      const isOverlap = board[boardY] && board[boardY][boardX] && cell;
+
+      return isOutside || isOverlap;
+    })
+  );
+};
+
+const handleUserInput = (keyCode: string, tetromino: Tetromino): Tetromino => {
+  switch (keyCode) {
+    case "KeyA": // Move Left
+      const leftTetromino = moveLeft(tetromino);
+      return isValidMove(leftTetromino, board) ? leftTetromino : tetromino;
+    case "KeyD": // Move Right
+      const rightTetromino = moveRight(tetromino);
+      return isValidMove(rightTetromino, board) ? rightTetromino : tetromino;
+    case "KeyS": // Move Down
+      const downTetromino = moveDown(tetromino);
+      return isValidMove(downTetromino, board) ? downTetromino : tetromino;
+    default:
+      return tetromino;
+  }
+};
+
+const getRandomTetromino = (): Tetromino => {
+  const tetrominoKeys = Object.keys(SHAPES);
+  const randomKey = tetrominoKeys[Math.floor(Math.random() * tetrominoKeys.length)];
+  const randomRotation = SHAPES[randomKey][Math.floor(Math.random() * SHAPES[randomKey].length)];
+
+  return {
+    shape: randomRotation,
+    position: { x: Math.floor(Constants.GRID_WIDTH / 2) - 1, y: 0 },
+    color: 'cyan',
+  };
+};
+
+const tetromino$ = new BehaviorSubject<Tetromino>(getRandomTetromino());
+
+// =======================
+// Game Loop 
+// =======================
 
 /**
  * This is the function called on page load. Your main game loop
@@ -159,53 +282,74 @@ export function main() {
    * @param s Current state
    */
   const render = (s: State) => {
-    // Add blocks to the main grid canvas
-    const cube = createSvgElement(svg.namespaceURI, "rect", {
-      height: `${Block.HEIGHT}`,
-      width: `${Block.WIDTH}`,
-      x: "0",
-      y: "0",
-      style: "fill: green",
-    });
-    svg.appendChild(cube);
-    const cube2 = createSvgElement(svg.namespaceURI, "rect", {
-      height: `${Block.HEIGHT}`,
-      width: `${Block.WIDTH}`,
-      x: `${Block.WIDTH * (3 - 1)}`,
-      y: `${Block.HEIGHT * (20 - 1)}`,
-      style: "fill: red",
-    });
-    svg.appendChild(cube2);
-    const cube3 = createSvgElement(svg.namespaceURI, "rect", {
-      height: `${Block.HEIGHT}`,
-      width: `${Block.WIDTH}`,
-      x: `${Block.WIDTH * (4 - 1)}`,
-      y: `${Block.HEIGHT * (20 - 1)}`,
-      style: "fill: red",
-    });
-    svg.appendChild(cube3);
-
-    // Add a block to the preview canvas
-    const cubePreview = createSvgElement(preview.namespaceURI, "rect", {
-      height: `${Block.HEIGHT}`,
-      width: `${Block.WIDTH}`,
-      x: `${Block.WIDTH * 2}`,
-      y: `${Block.HEIGHT}`,
-      style: "fill: green",
-    });
-    preview.appendChild(cubePreview);
+    const render = (tetromino: Tetromino) => {
+      // Clear previous tetromino rendering
+      svg.innerHTML = '';
+  
+      // Render the tetromino on the board
+      tetromino.shape.forEach((row, y) => {
+        row.forEach((cell, x) => {
+          if (cell) {
+            const cube = createSvgElement(svg.namespaceURI, "rect", {
+              height: `${Block.HEIGHT}`,
+              width: `${Block.WIDTH}`,
+              x: `${(tetromino.position.x + x) * Block.WIDTH}`,
+              y: `${(tetromino.position.y + y) * Block.HEIGHT}`,
+              style: `fill: ${tetromino.color}`,
+            });
+            svg.appendChild(cube);
+          }
+        });
+      });
   };
+
+  // Handle game progression
+  tick$.subscribe(() => {
+    const currentTetromino = tetromino$.value;
+    const movedTetromino = moveDown(currentTetromino);
+    if (isValidMove(movedTetromino, board)) {
+      tetromino$.next(movedTetromino);
+    } else {
+      // Handle collision and generate a new tetromino
+      tetromino$.next(getRandomTetromino());
+    }
+    render(tetromino$.value);
+  });
+
+  // Handle user input
+  key$.subscribe(event => {
+    const currentTetromino = tetromino$.value;
+    let newTetromino: Tetromino;
+    switch (event.code) {
+      case "KeyA":
+        newTetromino = moveLeft(currentTetromino);
+        break;
+      case "KeyD":
+        newTetromino = moveRight(currentTetromino);
+        break;
+      case "KeyS":
+        newTetromino = moveDown(currentTetromino);
+        break;
+      default:
+        newTetromino = currentTetromino;
+    }
+    if (isValidMove(newTetromino, board)) {
+      tetromino$.next(newTetromino);
+    }
+    render(tetromino$.value);
+  });
+}
 
   const source$ = merge(tick$)
     .pipe(scan((s: State) => ({ gameEnd: true }), initialState))
     .subscribe((s: State) => {
       render(s);
 
-      // if (s.gameEnd) {
-      //   show(gameover);
-      // } else {
-      //   hide(gameover);
-      // }
+      if (s.gameEnd) {
+        show(gameover);
+      } else {
+        hide(gameover);
+      }
     });
 }
 
