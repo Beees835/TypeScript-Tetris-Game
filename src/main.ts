@@ -12,19 +12,21 @@
  * Document your code!
  */
 
+
+// Make a block class -- Positioning and colouring 
+
+// Tetromino -- tetris pieces contains arrays of blocks -- the blocks have relative positions to the piece. 
+
+// Game restart 
+
+
+
 import "./style.css";
+
 import { fromEvent, interval, merge } from "rxjs";
 import { map, filter, scan } from "rxjs/operators";
 
-
-
 /** Constants */
-
-const BOARD_WIDTH = 10;
-const BOARD_HEIGHT = 20;
-
-const tetrominoPosX = BOARD_WIDTH / 2; // starting position
-const tetrominoPosY = 0;
 
 const Viewport = {
   CANVAS_WIDTH: 200,
@@ -44,53 +46,6 @@ const Block = {
   HEIGHT: Viewport.CANVAS_HEIGHT / Constants.GRID_HEIGHT,
 };
 
-
-type BlockPosition = { x: number; y: number };
-
-class Tetromino {
-  constructor(public blocks: BlockPosition[], public color: string) {}
-}
-
-let board: (string | null)[][] = Array.from({ length: BOARD_HEIGHT }, () =>
-  Array(BOARD_WIDTH).fill(null)
-);
-
-// Constructing all shapes of tetromino
-// Double check with Dan to check correctness
-const I_Tetromino = new Tetromino([{ x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }, { x: 0, y: 0 }], "cyan");
-const L_TETROMINO = new Tetromino([{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }] ,"orange"); 
-
-
-function renderBoardAndTetromino(board: (string | null)[][], tetromino: Tetromino, posX: number, posY: number, svg: SVGGraphicsElement) {
-  // Clear previous rendering
-  Array.from(svg.children).forEach(child => svg.removeChild(child));
-
-  // Render the board using map
-  board.flatMap((row, y) => 
-    row.map((cell, x) => {
-      if (cell) {
-        renderBlock(x, y, cell, svg);
-      }
-    })
-  );
-
-  // Render the tetromino using map
-  tetromino.blocks.flatMap(block => 
-    renderBlock(block.x + posX, block.y + posY, tetromino.color, svg)
-  );
-}
-
-function renderBlock(x: number, y: number, color: string, svg: SVGGraphicsElement) {
-  const rect = createSvgElement(svg.namespaceURI, "rect", {
-    x: `${x * Block.WIDTH}`,
-    y: `${y * Block.HEIGHT}`,
-    width: `${Block.WIDTH}`,
-    height: `${Block.HEIGHT}`,
-    style: `fill:${color}`
-  });
-  svg.appendChild(rect);
-}
-
 /** User input */
 
 type Key = "KeyS" | "KeyA" | "KeyD";
@@ -98,8 +53,6 @@ type Key = "KeyS" | "KeyA" | "KeyD";
 type Event = "keydown" | "keyup" | "keypress";
 
 /** Utility functions */
-
-
 
 /** State processing */
 
@@ -192,14 +145,12 @@ export function main() {
   const left$ = fromKey("KeyA");
   const right$ = fromKey("KeyD");
   const down$ = fromKey("KeyS");
-  
+
   /** Observables */
 
   /** Determines the rate of time steps */
   const tick$ = interval(Constants.TICK_RATE_MS);
 
-  renderBoardAndTetromino(board, I_Tetromino, tetrominoPosX, tetrominoPosY, svg);
-  
   /**
    * Renders the current state to the canvas.
    *
@@ -243,20 +194,18 @@ export function main() {
       style: "fill: green",
     });
     preview.appendChild(cubePreview);
-
-    
   };
 
   const source$ = merge(tick$)
-    .pipe(scan((s: State) => ({ gameEnd: false }), initialState))
+    .pipe(scan((s: State) => ({ gameEnd: true }), initialState))
     .subscribe((s: State) => {
       render(s);
-      
-      if (s.gameEnd) {
-        show(gameover);
-      } else {
-        hide(gameover);
-      }
+
+      // if (s.gameEnd) {
+      //   show(gameover);
+      // } else {
+      //   hide(gameover);
+      // }
     });
 }
 
